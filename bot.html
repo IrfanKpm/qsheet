@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Qsheet.ai – Ask AI</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(to bottom right, #0f172a, #1e293b);
+      color: #eee;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 2rem auto;
+      background: #111827;
+      border-radius: 0.75rem;
+      padding: 2rem;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.7);
+    }
+
+    h1 {
+      text-align: center;
+      color: #22d3ee;
+      margin-bottom: 1.5rem;
+    }
+
+    label {
+      font-weight: 600;
+      margin-top: 1rem;
+      display: block;
+    }
+
+    input[type="file"], textarea {
+      width: 100%;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      background: #1f2937;
+      border: 1px solid #374151;
+      color: #ddd;
+      font-size: 1rem;
+      resize: vertical;
+    }
+
+    textarea::placeholder {
+      color: #6b7280;
+    }
+
+    button {
+      width: 100%;
+      background: linear-gradient(to right, #34d399, #3b82f6);
+      color: white;
+      font-weight: 700;
+      padding: 1rem;
+      border: none;
+      border-radius: 9999px;
+      font-size: 1.1rem;
+      cursor: pointer;
+      transition: background 0.3s ease;
+      margin-top: 1rem;
+    }
+
+    button:hover {
+      background: linear-gradient(to right, #22c55e, #2563eb);
+    }
+
+    .note-section {
+      margin-top: 1rem;
+      background: #fbbf24;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      font-weight: 600;
+      color: #92400e;
+      box-shadow: 0 0 10px #fbbf2466;
+    }
+
+    .error-section {
+      margin-top: 1rem;
+      background: #b91c1c;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      font-weight: 700;
+      color: #fee2e2;
+      box-shadow: 0 0 10px #b91c1caa;
+    }
+
+    .response-section {
+      margin-top: 2rem;
+      padding: 1rem 1.25rem;
+      background: #1f2937;
+      border-radius: 0.75rem;
+      box-shadow: inset 0 0 10px #0ea5e9aa;
+    }
+
+    .chat-entry {
+      margin-bottom: 2rem;
+    }
+
+    .prompt {
+      font-weight: bold;
+      color: #22d3ee;
+      margin-bottom: 0.25rem;
+    }
+
+    .text-response {
+      white-space: pre-line;
+      line-height: 1.5;
+      margin-top: 0.5rem;
+    }
+
+    .chart-img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 0.5rem;
+      box-shadow: 0 0 15px #0ea5e9bb;
+      margin-top: 1rem;
+    }
+
+    .download-btn {
+      margin-top: 1rem;
+      display: inline-block;
+      background: #2563eb;
+      color: white;
+      padding: 0.5rem 1rem;
+      font-size: 1.1rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.3s ease;
+    }
+
+    .download-btn:hover {
+      background: #1e40af;
+    }
+
+    .preview-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+      background-color: #1e293b;
+      color: #eee;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      font-size: 0.95rem;
+    }
+
+    .preview-table th, .preview-table td {
+      padding: 0.75rem;
+      border: 1px solid #334155;
+      text-align: left;
+    }
+
+    .preview-table th {
+      background-color: #0f172a;
+      color: #22d3ee;
+    }
+
+    .df-preview {
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>🧠 Qsheet.ai – Ask AI</h1>
+
+    <form method="post" enctype="multipart/form-data" novalidate>
+      {% csrf_token %}
+
+      <label for="file">Upload Spreadsheet (.xlsx or .csv)</label>
+      <input type="file" name="file" id="file" accept=".csv, .xls, .xlsx" />
+
+      <label for="prompt">Enter Your Prompt</label>
+      <textarea name="prompt" id="prompt" rows="4" required placeholder="e.g., Show top 5 customers by revenue..."></textarea>
+
+      <button type="submit">💬 Ask</button>
+    </form>
+
+    {% if note %}
+      <div class="note-section">{{ note }}</div>
+    {% endif %}
+
+    {% if error %}
+      <div class="error-section">{{ error }}</div>
+    {% endif %}
+
+    {% if chat_history %}
+      <div class="response-section">
+        <h2 style="color:#34d399;">💬 Chat History</h2>
+        {% for entry in chat_history %}
+          <div class="chat-entry">
+            <div class="prompt">🧑 You:</div>
+            <div class="text-response">{{ entry.prompt }}</div>
+
+            {% if entry.type == 'text' %}
+              <div class="prompt">🤖 AI:</div>
+              <div class="text-response">{{ entry.content }}</div>
+
+            {% elif entry.type == 'chart' %}
+              <img src="data:image/png;base64,{{ entry.content }}" class="chart-img" alt="AI Chart" />
+              <br/>
+              <a href="data:image/png;base64,{{ entry.content }}" download="chart.png" class="download-btn">⬇️ Download Chart</a>
+
+            {% elif entry.type == 'dataframe' %}
+              <div class="prompt">📊 Preview Table:</div>
+              <div class="df-preview">{{ entry.table|safe }}</div>
+              <a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{{ entry.file }}" download="result.xlsx" class="download-btn">⬇️ Download Excel</a>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+  </div>
+
+</body>
+</html>
