@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 const FRAME_DELAY = 650;
-
 
 const BASE_MAP = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -33,15 +32,15 @@ const CSS = `
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:       #0d0d0f;
-  --surface:  #16161a;
-  --surface2: #1e1e24;
-  --border:   #2a2a35;
-  --accent:   #00e5a0;
-  --accent2:  #7c6fff;
-  --text:     #e8e8f0;
-  --muted:    #6b6b80;
-  --danger:   #ff4d6d;
+  --bg:        #0d0d0f;
+  --surface:   #16161a;
+  --surface2:  #1e1e24;
+  --border:    #2a2a35;
+  --accent:    #00e5a0;
+  --accent2:   #7c6fff;
+  --text:      #e8e8f0;
+  --muted:     #6b6b80;
+  --danger:    #ff4d6d;
   --sidebar-w: 240px;
   --header-h:  56px;
 }
@@ -237,6 +236,10 @@ body {
   color: var(--muted);
   font-family: 'DM Mono', monospace;
 }
+.view-count .matched-count {
+  color: var(--accent);
+  font-weight: 600;
+}
 .load-btn {
   background: var(--accent);
   color: #000;
@@ -268,7 +271,7 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── GRID ── */
+/* ── GRID SCROLL ── */
 .grid-scroll {
   flex: 1;
   overflow-y: auto;
@@ -277,10 +280,64 @@ body {
 .grid-scroll::-webkit-scrollbar { width: 4px; }
 .grid-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
+/* ── SECTION DIVIDER ── */
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin: 1.4rem 0 1rem;
+  position: relative;
+}
+.section-divider::before,
+.section-divider::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent2) 30%, var(--accent2) 70%, transparent);
+  border-radius: 2px;
+}
+.divider-pill {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  background: var(--surface2);
+  border: 1px solid var(--accent2);
+  border-radius: 20px;
+  padding: .22rem .7rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.divider-pill span {
+  font-size: .6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--accent2);
+}
+.divider-pill .divider-count {
+  font-family: 'DM Mono', monospace;
+  font-size: .62rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* ── GRID ── */
 .grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: .75rem;
+}
+
+/* ── UNMATCHED section ── */
+.unmatched-grid {
+  opacity: 0.38;
+  transition: opacity .25s;
+}
+.unmatched-grid:hover {
+  opacity: 0.6;
+}
+.unmatched-grid .card {
+  border-style: dashed !important;
 }
 
 /* ── CARD ── */
@@ -292,11 +349,11 @@ body {
   display: flex;
   flex-direction: column;
   animation: fadeUp .22s ease both;
-  transition: border-color .2s;
+  transition: border-color .2s, transform .15s;
 }
-.card:hover { border-color: #3a3a50; }
+.card:hover { border-color: #3a3a50; transform: translateY(-2px); }
 @keyframes fadeUp {
-  from { opacity: 0; transform: translateY(5px); }
+  from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: none; }
 }
 
@@ -346,6 +403,14 @@ body {
   overflow: hidden;
 }
 
+/* ── MATCHED badge on card ── */
+.card.is-matched {
+  border-color: rgba(0, 229, 160, 0.25);
+}
+.card.is-matched:hover {
+  border-color: rgba(0, 229, 160, 0.5);
+}
+
 /* ── EMPTY / ERROR ── */
 .empty {
   flex: 1;
@@ -362,7 +427,7 @@ body {
 .empty-icon { font-size: 2rem; opacity: .2; }
 
 .err {
-  margin: 1rem;
+  margin: 0 0 1rem 0;
   background: rgba(255,77,109,.08);
   border: 1px solid var(--danger);
   color: var(--danger);
@@ -370,6 +435,27 @@ body {
   border-radius: 8px;
   font-size: .74rem;
   font-family: 'DM Mono', monospace;
+}
+
+/* ── MATCHED section label ── */
+.section-label {
+  font-size: .58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--accent);
+  margin-bottom: .55rem;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+.section-label::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 `;
 
@@ -384,10 +470,10 @@ function useGlobalStyle(css) {
 }
 
 // ─── Card ─────────────────────────────────────────────────────────────────────
-function Card({ title, isLoaded, domain, token }) {
+function Card({ title, isLoaded, domain, token, isMatched }) {
   const encodedId = substituteDecode(title.name, token);
   return (
-    <div className="card">
+    <div className={`card${isMatched ? " is-matched" : ""}`}>
       <div className="card-thumb">
         {isLoaded ? (
           <iframe
@@ -409,14 +495,14 @@ function Card({ title, isLoaded, domain, token }) {
   );
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
+// ─── App5─────────────────────────────────────────────────────────────────────
 export default function App5() {
   useGlobalStyle(CSS);
 
-  // ── config inputs (all editable in header) ──
-  const [apiUrl, setApiUrl]   = useState("http://cosine-test.example/api/test");
-  const [domain, setDomain]   = useState("youtube.com");
-  const [token, setToken]     = useState("");
+  // ── config inputs ──
+  const [apiUrl, setApiUrl] = useState("http://cosine-test.example/api/test");
+  const [domain, setDomain] = useState("youtube.com");
+  const [token, setToken]   = useState("");
 
   // ── data ──
   const [categories, setCategories] = useState([]);
@@ -462,33 +548,54 @@ export default function App5() {
     });
   }, []);
 
-  // ── derived ──
-  const visibleTitles = titles.filter((t) => {
-    if (selectedTags.size === 0) return true;
-    const ids = t.tags.map((tag) => String(tag.id));
-    return Array.from(selectedTags).every((id) => ids.includes(id));
-  });
-
-  const anyUnloaded = visibleTitles.some(
-    (t) => !loadedIds.has(substituteDecode(t.name, token))
-  );
+  // ── partition into matched + unmatched, never filter out ──
+  const { matched, unmatched } = useMemo(() => {
+    if (selectedTags.size === 0) {
+      return { matched: titles, unmatched: [] };
+    }
+    const m = [], u = [];
+    titles.forEach((t) => {
+      const tagIds = t.tags.map((tag) => String(tag.id));
+      const fits = Array.from(selectedTags).every((id) => tagIds.includes(id));
+      fits ? m.push(t) : u.push(t);
+    });
+    return { matched: m, unmatched: u };
+  }, [titles, selectedTags]);
 
   // ── load iframes sequentially ──
+  // Only loads matched titles (or all if no filter active).
+  // Unmatched cards keep their existing loaded/unloaded state untouched.
   const loadFrames = useCallback(async () => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setIsLoading(true);
-    const toLoad = visibleTitles.filter(
+
+    // When filters are active → only load matched titles.
+    // When no filters → load everything (matched = all titles, unmatched = []).
+    const toLoad = (selectedTags.size === 0 ? [...matched, ...unmatched] : matched).filter(
       (t) => !loadedIds.has(substituteDecode(t.name, token))
     );
+
     for (let i = 0; i < toLoad.length; i++) {
       const encodedId = substituteDecode(toLoad[i].name, token);
       setLoadedIds((prev) => new Set([...prev, encodedId]));
       if (i < toLoad.length - 1) await delay(FRAME_DELAY);
     }
+
     setIsLoading(false);
     loadingRef.current = false;
-  }, [visibleTitles, loadedIds, token]);
+  }, [matched, unmatched, loadedIds, token, selectedTags]);
+
+  // Count only the titles that would be loaded by the button
+  const totalUnloaded = (selectedTags.size === 0 ? [...matched, ...unmatched] : matched).filter(
+    (t) => !loadedIds.has(substituteDecode(t.name, token))
+  ).length;
+
+  const showDivider =
+    selectedTags.size > 0 && matched.length > 0 && unmatched.length > 0;
+
+  const showEmptyFiltered =
+    selectedTags.size > 0 && matched.length === 0 && titles.length > 0;
 
   return (
     <>
@@ -536,7 +643,10 @@ export default function App5() {
         <aside className="sidebar">
           <div className="sidebar-head">
             <span>Filters</span>
-            <button className="clear-btn" onClick={() => setSelectedTags(new Set())}>
+            <button
+              className="clear-btn"
+              onClick={() => setSelectedTags(new Set())}
+            >
               Clear
             </button>
           </div>
@@ -560,7 +670,11 @@ export default function App5() {
             ))}
 
             {categories.length === 0 && !error && (
-              <p style={{ fontSize: ".65rem", color: "var(--muted)", fontFamily: "'DM Mono',monospace" }}>
+              <p style={{
+                fontSize: ".65rem",
+                color: "var(--muted)",
+                fontFamily: "'DM Mono',monospace",
+              }}>
                 No categories loaded.
               </p>
             )}
@@ -577,47 +691,100 @@ export default function App5() {
         <div className="view">
           <div className="view-head">
             <span className="view-count">
-              {visibleTitles.length} title{visibleTitles.length !== 1 ? "s" : ""}
+              {selectedTags.size === 0 ? (
+                <>{titles.length} title{titles.length !== 1 ? "s" : ""}</>
+              ) : (
+                <>
+                  <span className="matched-count">{matched.length}</span>
+                  {" "}matched · {unmatched.length} other
+                  {unmatched.length !== 1 ? "s" : ""}
+                </>
+              )}
             </span>
             <button
               className={`load-btn${isLoading ? " loading" : ""}`}
               onClick={loadFrames}
-              disabled={isLoading || !anyUnloaded}
+              disabled={isLoading || totalUnloaded === 0}
             >
               {isLoading ? (
                 <><span className="spinner" /> Loading…</>
               ) : (
-                <>▶ Load Iframes</>
+                <>▶ Load Iframes{totalUnloaded > 0 ? ` (${totalUnloaded})` : ""}</>
               )}
             </button>
           </div>
 
+          {/* ── GRID AREA ── */}
           <div className="grid-scroll">
             {error && <div className="err">⚠ {error}</div>}
 
-            {visibleTitles.length === 0 && !error ? (
+            {titles.length === 0 && !error ? (
               <div className="empty">
-                <div className="empty-icon">
-                  {titles.length === 0 ? "📭" : "🔍"}
-                </div>
-                <p>
-                  {titles.length === 0
-                    ? "Enter your API URL and click Fetch."
-                    : "No titles match the selected filters."}
-                </p>
+                <div className="empty-icon">📭</div>
+                <p>Enter your API URL and click Fetch.</p>
               </div>
             ) : (
-              <div className="grid">
-                {visibleTitles.map((title) => (
-                  <Card
-                    key={title.id}
-                    title={title}
-                    isLoaded={loadedIds.has(substituteDecode(title.name, token))}
-                    domain={domain}
-                    token={token}
-                  />
-                ))}
-              </div>
+              <>
+                {/* ── MATCHED section ── */}
+                {matched.length > 0 && (
+                  <>
+                    {selectedTags.size > 0 && (
+                      <div className="section-label">
+                        {matched.length} matching
+                      </div>
+                    )}
+                    <div className="grid">
+                      {matched.map((title) => (
+                        <Card
+                          key={title.id}
+                          title={title}
+                          isLoaded={loadedIds.has(substituteDecode(title.name, token))}
+                          domain={domain}
+                          token={token}
+                          isMatched={selectedTags.size > 0}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* ── EMPTY MATCH STATE ── */}
+                {showEmptyFiltered && (
+                  <div className="empty" style={{ paddingTop: "1.5rem" }}>
+                    <div className="empty-icon">🔍</div>
+                    <p>No titles match all selected tags.</p>
+                    <p style={{ fontSize: ".65rem", marginTop: ".25rem" }}>
+                      All {unmatched.length} titles are shown below.
+                    </p>
+                  </div>
+                )}
+
+                {/* ── DIVIDER ── */}
+                {showDivider && (
+                  <div className="section-divider">
+                    <div className="divider-pill">
+                      <span>not matching</span>
+                      <span className="divider-count">{unmatched.length}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── UNMATCHED section — always mounted, iframes never destroyed ── */}
+                {unmatched.length > 0 && (
+                  <div className={`grid${selectedTags.size > 0 ? " unmatched-grid" : ""}`}>
+                    {unmatched.map((title) => (
+                      <Card
+                        key={title.id}
+                        title={title}
+                        isLoaded={loadedIds.has(substituteDecode(title.name, token))}
+                        domain={domain}
+                        token={token}
+                        isMatched={false}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
